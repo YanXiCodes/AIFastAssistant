@@ -1,0 +1,36 @@
+{
+  "appId": "com.ai-fast-assistant",
+  "productName": "AI Fast Assistant",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "renderer/**/*",
+    "src/**/*",
+    "assets/**/*",
+    "node_modules/**/*"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "dir",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "assets/icon.ico",
+    "sign": null
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  },
+  "portable": {
+    "artifactName": "${productName}-${version}-portable.exe"
+  },
+  "compression": "maximum",
+  "asar": true
+}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Fast Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Highlight.js 代码高亮 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <!-- Markdown 渲染 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- 标题栏 -->
+    <div class="titlebar" style="-webkit-app-region: drag">
+      <span class="title">AI Fast Assistant</span>
+      <div class="controls" style="-webkit-app-region: no-drag">
+        <button id="history-btn" class="titlebar-btn" title="历史记录">📜</button>
+        <button id="preset-btn" class="titlebar-btn" title="预设模板">📋</button>
+        <button id="settings-btn" class="titlebar-btn" title="设置">⚙️</button>
+        <button id="close-btn" class="titlebar-btn" title="关闭 (Esc)">✕</button>
+      </div>
+    </div>
+
+    <!-- 当前预设提示 -->
+    <div id="current-preset" class="current-preset" style="display: none;">
+      <span class="preset-label">当前模式：</span>
+      <span id="preset-name" class="preset-name"></span>
+      <button id="clear-preset-btn" class="clear-preset-btn">✕</button>
+    </div>
+
+    <!-- 对话区域 -->
+    <div class="chat-container" id="chat-container">
+      <div class="welcome-message">
+        <h2>👋 欢迎使用 AI Fast Assistant</h2>
+        <p>按 <kbd>Ctrl+Shift+Space</kbd> 随时唤起</p>
+        <p>按 <kbd>Ctrl+Enter</kbd> 发送消息</p>
+        <p>按 <kbd>Esc</kbd> 关闭窗口</p>
+        <p>点击 <kbd>📋</kbd> 选择预设模板</p>
+      </div>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-container">
+      <!-- 快捷命令菜单 -->
+      <div id="command-menu" class="command-menu" style="display: none;">
+        <div class="command-list" id="command-list"></div>
+      </div>
+
+      <div class="input-toolbar">
+        <button id="paste-btn" class="toolbar-btn" title="粘贴剪贴板内容">📋</button>
+        <button id="image-btn" class="toolbar-btn" title="上传图片 (Ctrl+V 粘贴)">🖼️</button>
+        <input type="file" id="image-input" accept="image/*" style="display: none;">
+      </div>
+      <textarea
+        id="message-input"
+        placeholder="输入问题... (Ctrl+Enter 发送, Ctrl+V 粘贴图片)"
+        rows="3"
+      ></textarea>
+      <div class="button-group">
+        <button id="send-btn" class="primary-btn">发送</button>
+        <button id="clear-btn" class="secondary-btn">清空</button>
+      </div>
+    </div>
+
+    <!-- 预设模板选择 -->
+    <div id="preset-modal" class="modal" style="display: none;">
+      <div class="modal-content preset-modal-content">
+        <h3>选择预设模板</h3>
+        <div class="preset-list" id="preset-list">
+          <!-- 预设列表将动态生成 -->
+        </div>
+        <button id="close-preset-modal" class="secondary-btn" style="width: 100%; margin-top: 12px;">取消</button>
+      </div>
+    </div>
+
+    <!-- 历史记录 -->
+    <div id="history-modal" class="modal" style="display: none;">
+      <div class="modal-content history-modal-content">
+        <h3>📜 历史记录</h3>
+        <div class="history-list" id="history-list">
+          <p style="text-align: center; color: #71717a; padding: 20px;">暂无历史记录</p>
+        </div>
+        <button id="close-history-modal" class="secondary-btn" style="width: 100%; margin-top: 12px;">取消</button>
+      </div>
+    </div>
+
+    <!-- 设置对话框 -->
+    <div id="settings-modal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <h3>⚙️ 设置</h3>
+
+        <div class="setting-group">
+          <label>DeepSeek API Key</label>
+          <input type="text" id="settings-api-key" placeholder="sk-..." />
+        </div>
+
+        <div class="setting-group">
+          <label>全局快捷键</label>
+          <input type="text" id="settings-shortcut" placeholder="按下新的快捷键组合..." readonly />
+          <p class="setting-hint">点击输入框后按下新的快捷键组合</p>
+        </div>
+
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" id="settings-hide-on-blur" />
+            失焦时自动隐藏窗口
+          </label>
+        </div>
+
+        <div class="setting-group">
+          <label>窗口透明度</label>
+          <input type="range" id="settings-opacity" min="30" max="100" value="100" />
+          <p class="setting-hint">当前透明度: <span id="opacity-value">100</span>%</p>
+        </div>
+
+        <div class="config-buttons">
+          <button id="save-settings-btn" class="primary-btn">保存</button>
+          <button id="cancel-settings-btn" class="secondary-btn">取消</button>
+        </div>
+
+        <p class="config-hint">
+          获取 API Key: <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a>
+        </p>
+      </div>
+    </div>
+
+    <!-- 配置提示 -->
+    <div id="config-prompt" class="config-prompt" style="display: none;">
+      <div class="config-content">
+        <h3>⚠️ 需要配置 API Key</h3>
+        <p>请输入你的 DeepSeek API Key：</p>
+        <input type="text" id="api-key-input" placeholder="sk-..." />
+        <div class="config-buttons">
+          <button id="save-api-key-btn" class="primary-btn">保存</button>
+          <button id="cancel-config-btn" class="secondary-btn">取消</button>
+        </div>
+        <p class="config-hint">
+          获取 API Key: <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

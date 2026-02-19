@@ -1,0 +1,59 @@
+{
+  "name": "ai-fast-assistant",
+  "version": "1.0.0",
+  "description": "一个轻量级的 AI 浮窗助手，随时唤起，快速提问",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
+  },
+  "keywords": ["electron", "ai", "assistant", "deepseek", "chatbot", "productivity"],
+  "author": "YanXiCodes",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YanXiCodes/AeroFloat-.git"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  },
+  "build": {
+    "appId": "com.ai-fast-assistant",
+    "productName": "AI Fast Assistant",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "**/*",
+      "!dist",
+      "!node_modules",
+      "!.git"
+    ]
+  }
+}
