@@ -41,7 +41,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "assets/icon.ico"
+      "sign": null
     },
     "nsis": {
       "oneClick": false,
@@ -50,10 +50,12 @@
       "createStartMenuShortcut": true
     },
     "files": [
-      "**/*",
-      "!dist",
-      "!node_modules",
-      "!.git"
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
     ]
   }
 }

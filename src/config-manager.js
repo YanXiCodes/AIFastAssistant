@@ -17,6 +17,10 @@ const schema = {
     type: 'boolean',
     default: false
   },
+  autoLaunch: {
+    type: 'boolean',
+    default: false
+  },
   windowBounds: {
     type: 'object',
     default: {}

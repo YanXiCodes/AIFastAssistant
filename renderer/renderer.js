@@ -18,6 +18,7 @@ const settingsModal = document.getElementById('settings-modal');
 const settingsApiKey = document.getElementById('settings-api-key');
 const settingsShortcut = document.getElementById('settings-shortcut');
 const settingsHideOnBlur = document.getElementById('settings-hide-on-blur');
+const settingsAutoLaunch = document.getElementById('settings-auto-launch');
 const settingsOpacity = document.getElementById('settings-opacity');
 const opacityValue = document.getElementById('opacity-value');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
@@ -451,11 +452,13 @@ async function openSettings() {
   const apiKey = await window.electronAPI.getConfig('deepseekApiKey');
   const shortcut = await window.electronAPI.getConfig('globalShortcut');
   const hideOnBlur = await window.electronAPI.getConfig('hideOnBlur');
+  const autoLaunch = await window.electronAPI.getConfig('autoLaunch');
   const opacity = await window.electronAPI.getConfig('windowOpacity') || 100;
 
   settingsApiKey.value = apiKey || '';
   settingsShortcut.value = shortcut || 'CommandOrControl+Shift+Space';
   settingsHideOnBlur.checked = hideOnBlur || false;
+  settingsAutoLaunch.checked = autoLaunch || false;
   settingsOpacity.value = opacity;
   opacityValue.textContent = opacity;
 
@@ -474,6 +477,7 @@ async function saveSettings() {
   const apiKey = settingsApiKey.value.trim();
   const shortcut = settingsShortcut.value.trim();
   const hideOnBlur = settingsHideOnBlur.checked;
+  const autoLaunch = settingsAutoLaunch.checked;
 
   if (apiKey) {
     await window.electronAPI.setConfig('deepseekApiKey', apiKey);
@@ -488,6 +492,7 @@ async function saveSettings() {
   }
 
   await window.electronAPI.setConfig('hideOnBlur', hideOnBlur);
+  await window.electronAPI.setConfig('autoLaunch', autoLaunch);
 
   // 保存透明度
   const opacity = parseInt(settingsOpacity.value);

@@ -15,6 +15,15 @@ app.commandLine.appendSwitch('disable-features', 'MediaRouter');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 app.whenReady().then(() => {
+  // 设置开机自启动
+  const autoLaunch = config.get('autoLaunch');
+  if (autoLaunch !== undefined) {
+    app.setLoginItemSettings({
+      openAtLogin: autoLaunch,
+      openAsHidden: true // 开机后隐藏窗口，只在后台运行
+    });
+  }
+
   // 创建主窗口
   mainWindow = createMainWindow();
 
@@ -126,6 +135,14 @@ ipcMain.handle('set-config', (event, key, value) => {
   // 如果修改了透明度，更新窗口
   if (key === 'windowOpacity' && mainWindow) {
     mainWindow.setOpacity(value / 100);
+  }
+
+  // 如果修改了开机自启动，更新系统设置
+  if (key === 'autoLaunch') {
+    app.setLoginItemSettings({
+      openAtLogin: value,
+      openAsHidden: true
+    });
   }
 
   return { success: true };
