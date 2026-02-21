@@ -3,19 +3,23 @@ node_modules/
 
 # Build output
 dist/
+out/
+build/
 
 # Electron
-out/
+*.asar
 
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # IDE
 .vscode/
@@ -23,10 +27,29 @@ Thumbs.db
 *.swp
 *.swo
 *~
+*.sublime-*
 
 # Config (contains API keys)
 # Note: electron-store saves to user data directory, not in project
+config.json
+.env
+.env.local
 
 # Temporary files
 *.tmp
 .cache/
+temp/
+
+# Internal documentation (not for public)
+BUILD_SPEC.md
+INTERNAL_NOTES.md
+TODO.md
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Test coverage
+coverage/
+.nyc_output/

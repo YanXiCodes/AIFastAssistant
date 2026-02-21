@@ -16,7 +16,9 @@
     <!-- 标题栏 -->
     <div class="titlebar" style="-webkit-app-region: drag">
       <span class="title">AI Fast Assistant</span>
+      <span id="current-model" class="current-model" title="当前使用的模型"></span>
       <div class="controls" style="-webkit-app-region: no-drag">
+        <button id="clear-chat-btn" class="titlebar-btn" title="清空对话">🗑️</button>
         <button id="history-btn" class="titlebar-btn" title="历史记录">📜</button>
         <button id="preset-btn" class="titlebar-btn" title="预设模板">📋</button>
         <button id="settings-btn" class="titlebar-btn" title="设置">⚙️</button>
@@ -33,6 +35,12 @@
 
     <!-- 对话区域 -->
     <div class="chat-container" id="chat-container">
+      <!-- 状态指示器 -->
+      <div id="status-indicator" class="status-indicator" style="display: none;">
+        <span class="status-icon">⏳</span>
+        <span id="status-text" class="status-text">连接中...</span>
+      </div>
+
       <div class="welcome-message">
         <h2>👋 欢迎使用 AI Fast Assistant</h2>
         <p>按 <kbd>Ctrl+Shift+Space</kbd> 随时唤起</p>
@@ -61,6 +69,7 @@
       ></textarea>
       <div class="button-group">
         <button id="send-btn" class="primary-btn">发送</button>
+        <button id="stop-btn" class="stop-btn" style="display: none;">⏹ 停止</button>
         <button id="clear-btn" class="secondary-btn">清空</button>
       </div>
     </div>
@@ -93,7 +102,38 @@
         <h3>⚙️ 设置</h3>
 
         <div class="setting-group">
-          <label>DeepSeek API Key</label>
+          <label>API 提供商</label>
+          <select id="settings-api-provider">
+            <option value="deepseek">DeepSeek 官方</option>
+            <option value="siliconflow">硅基流动</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label>模型</label>
+          <select id="settings-model"></select>
+          <p class="setting-hint">如果列表中没有你需要的模型，可以选择"自定义"提供商手动输入</p>
+        </div>
+
+        <div class="setting-group" id="custom-model-input-group" style="display: none;">
+          <label>或手动输入模型名称</label>
+          <input type="text" id="settings-manual-model" placeholder="例如: Qwen/Qwen2.5-14B-Instruct" />
+          <p class="setting-hint">输入后将覆盖上方选择的模型</p>
+        </div>
+
+        <div class="setting-group" id="custom-base-url-group" style="display: none;">
+          <label>自定义 Base URL</label>
+          <input type="text" id="settings-base-url" placeholder="https://api.example.com" />
+        </div>
+
+        <div class="setting-group" id="custom-model-group" style="display: none;">
+          <label>自定义模型名称</label>
+          <input type="text" id="settings-custom-model" placeholder="model-name" />
+        </div>
+
+        <div class="setting-group">
+          <label>API Key</label>
           <input type="text" id="settings-api-key" placeholder="sk-..." />
         </div>
 

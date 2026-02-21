@@ -1,11 +1,14 @@
-const { app, globalShortcut, ipcMain, dialog, clipboard } = require('electron');
+const { app, globalShortcut, ipcMain, dialog, clipboard, Tray, Menu, nativeImage } = require('electron');
 const { createMainWindow } = require('./src/window-manager');
 const DeepSeekClient = require('./src/deepseek-client');
-const { config, presets } = require('./src/config-manager');
+const { config, presets, apiProviders } = require('./src/config-manager');
+const path = require('path');
 
 let mainWindow = null;
+let tray = null;
 let currentShortcut = null;
 let lastClipboardText = '';
+let currentClient = null; // 保存当前的 DeepSeekClient 实例
 
 // 禁用硬件加速以减少内存占用
 app.disableHardwareAcceleration();
@@ -24,8 +27,19 @@ app.whenReady().then(() => {
     });
   }
 
+  // 创建系统托盘
+  createTray();
+
   // 创建主窗口
   mainWindow = createMainWindow();
+
+  // 阻止窗口关闭，改为隐藏
+  mainWindow.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
 
   // 窗口加载完成后显示
   mainWindow.webContents.once('did-finish-load', () => {
@@ -43,6 +57,64 @@ app.whenReady().then(() => {
   currentShortcut = config.get('globalShortcut');
   registerGlobalShortcut(currentShortcut);
 });
+
+// 创建系统托盘
+function createTray() {
+  // 创建托盘图标（使用简单的文本图标）
+  const icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAA7AAAAOwBeShxvQAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAGvSURBVFiF7ZY9TsNAEIW/sZ0fJRAKKKiQaGiQKLgAHRUlF+AAdFSchI6Gkg4JCQkJCQoKpIQiEiLYTrzDFrGz3rWdGAkqXmnlnZ2d92bXu2sBGhoaGv4bAqgABbwCT8A9cANcAefAEXAA7AP7wB6wC+wAW8AmsAGsA2vAKrACLAPLwBKwCCwA88AcMAtsANPAFDAJTADjwBgwCowAw8AQMAiUgAGgHxgA+oA+oBfoAXqAbqAL6AS6gA6gHWgD2oFWoAVoBpqARqABqAdqgRqgGqgCKoEKoByoAEqBUqAYKAaKgCKgECgA8kAeyAE5IAvkgAyQBtJACkgBSSABxIE4EANiQBSIABEgDISBEBAEAkAACAB+wA/4AB/gBbyAB3ADLsAJOAAH4ADsgB2wAVbAAtgAM2AGzIAJMAImwASYABNgBEyACTACRsAIGAEjYASMgBEwAkbACBgBI2AEjIARMAJGwAgYASNgBIyAETACRsAIGAEjYASMgBEwAkbACBgBI2AEjIARMAJGwAgYASNgBIyAETACRsAIGAEjYASMgBEwAkbACBgBI2AEjIARMAJGwAgYASNgBIyAETACRsAIGAEjYAT+AV8A7qLgHzEKAAAAAElFTkSuQmCC');
+
+  tray = new Tray(icon);
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示窗口',
+      click: () => {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+    {
+      label: '隐藏窗口',
+      click: () => {
+        mainWindow.hide();
+      }
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: '设置',
+      click: () => {
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('open-settings');
+      }
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: '退出',
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('AI Fast Assistant');
+  tray.setContextMenu(contextMenu);
+
+  // 双击托盘图标显示/隐藏窗口
+  tray.on('double-click', () => {
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
 
 // 注册全局快捷键函数
 function registerGlobalShortcut(shortcut) {
@@ -78,10 +150,11 @@ function registerGlobalShortcut(shortcut) {
   }
 }
 
-// IPC 处理：发送消息（支持预设 prompt）
-ipcMain.handle('send-message', async (event, message, presetPrompt) => {
+// IPC 处理：发送消息（支持预设 prompt 和对话历史）
+ipcMain.handle('send-message', async (event, message, presetPrompt, conversationHistory = []) => {
   const apiKey = config.get('deepseekApiKey');
   const baseUrl = config.get('deepseekBaseUrl');
+  const modelName = config.get('modelName') || 'deepseek-chat';
 
   if (!apiKey) {
     return { error: '请先配置 API Key' };
@@ -90,7 +163,8 @@ ipcMain.handle('send-message', async (event, message, presetPrompt) => {
   // 如果有预设 prompt，将其添加到消息前
   const fullMessage = presetPrompt ? `${presetPrompt}\n\n用户问题：${message}` : message;
 
-  const client = new DeepSeekClient(apiKey, baseUrl);
+  const client = new DeepSeekClient(apiKey, baseUrl, modelName);
+  currentClient = client; // 保存当前客户端实例
 
   return new Promise((resolve) => {
     let fullResponse = '';
@@ -106,6 +180,11 @@ ipcMain.handle('send-message', async (event, message, presetPrompt) => {
       },
       (error) => {
         resolve({ error: error.message || '请求失败' });
+      },
+      conversationHistory,
+      (status, reasoningContent) => {
+        // 发送状态更新到渲染进程
+        event.sender.send('model-status', { status, reasoningContent });
       }
     );
   });
@@ -153,6 +232,11 @@ ipcMain.handle('get-presets', () => {
   return presets;
 });
 
+// IPC 处理：获取 API 提供商列表
+ipcMain.handle('get-api-providers', () => {
+  return apiProviders;
+});
+
 // IPC 处理：打开配置对话框
 ipcMain.handle('open-config-dialog', async () => {
   const result = await dialog.showMessageBox(mainWindow, {
@@ -168,6 +252,16 @@ ipcMain.handle('open-config-dialog', async () => {
 // IPC 处理：获取剪贴板文本
 ipcMain.handle('get-clipboard-text', () => {
   return clipboard.readText();
+});
+
+// IPC 处理：停止生成
+ipcMain.handle('stop-generation', () => {
+  if (currentClient) {
+    currentClient.cancel();
+    currentClient = null;
+    return { success: true };
+  }
+  return { success: false };
 });
 
 // 清理快捷键

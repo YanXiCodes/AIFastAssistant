@@ -1,9 +1,14 @@
 // 获取 DOM 元素
 const chatContainer = document.getElementById('chat-container');
+const statusIndicator = document.getElementById('status-indicator');
+const statusText = document.getElementById('status-text');
+const currentModelDisplay = document.getElementById('current-model');
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
+const stopBtn = document.getElementById('stop-btn');
 const clearBtn = document.getElementById('clear-btn');
 const closeBtn = document.getElementById('close-btn');
+const clearChatBtn = document.getElementById('clear-chat-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const presetBtn = document.getElementById('preset-btn');
 const imageBtn = document.getElementById('image-btn');
@@ -15,6 +20,14 @@ const cancelConfigBtn = document.getElementById('cancel-config-btn');
 
 // 设置模态框
 const settingsModal = document.getElementById('settings-modal');
+const settingsApiProvider = document.getElementById('settings-api-provider');
+const settingsModel = document.getElementById('settings-model');
+const settingsManualModel = document.getElementById('settings-manual-model');
+const customModelInputGroup = document.getElementById('custom-model-input-group');
+const settingsBaseUrl = document.getElementById('settings-base-url');
+const settingsCustomModel = document.getElementById('settings-custom-model');
+const customBaseUrlGroup = document.getElementById('custom-base-url-group');
+const customModelGroup = document.getElementById('custom-model-group');
 const settingsApiKey = document.getElementById('settings-api-key');
 const settingsShortcut = document.getElementById('settings-shortcut');
 const settingsHideOnBlur = document.getElementById('settings-hide-on-blur');
@@ -46,17 +59,25 @@ let currentAssistantMessage = null;
 let currentAssistantContent = '';
 let isProcessing = false;
 let currentPreset = null;
+let apiProviders = [];
+let currentProvider = null;
 let uploadedImage = null;
 let commandMenuVisible = false;
 let selectedCommandIndex = 0;
 let availableCommands = [];
-let chatHistory = [];
+let chatHistory = []; // 历史记录（用于显示）
+let conversationHistory = []; // 对话上下文（用于 API 请求）
 let userScrolling = false;
 let scrollTimeout = null;
+let lastChunkTime = null; // 记录最后一次收到数据的时间
+let stuckCheckInterval = null; // 卡住检测定时器
 
 // 初始化
 window.addEventListener('DOMContentLoaded', async () => {
   messageInput.focus();
+
+  // 加载并显示当前模型
+  await updateCurrentModelDisplay();
 
   // 配置 marked
   if (typeof marked !== 'undefined') {
@@ -113,6 +134,20 @@ window.addEventListener('DOMContentLoaded', async () => {
 // 监听配置提示
 window.electronAPI.onShowConfigPrompt(() => {
   showConfigPrompt();
+});
+
+// 监听模型状态（从 API 响应中获取）
+window.electronAPI.onModelStatus((data) => {
+  if (data.status === 'reasoning') {
+    showStatus('深度思考中...', '🧠');
+  } else if (data.status === 'generating') {
+    showStatus('生成中...', '✨');
+  }
+});
+
+// 监听打开设置（从托盘触发）
+window.electronAPI.onOpenSettings(() => {
+  openSettings();
 });
 
 // 监听选中文本
@@ -282,6 +317,42 @@ function showHistory() {
   historyModal.style.display = 'flex';
 }
 
+// 状态管理函数
+function showStatus(message, icon = '⏳') {
+  statusIndicator.style.display = 'flex';
+  statusText.textContent = message;
+  statusIndicator.querySelector('.status-icon').textContent = icon;
+}
+
+function hideStatus() {
+  statusIndicator.style.display = 'none';
+}
+
+// 更新当前模型显示
+async function updateCurrentModelDisplay() {
+  const apiProvider = await window.electronAPI.getConfig('apiProvider') || 'deepseek';
+  const modelName = await window.electronAPI.getConfig('modelName') || 'deepseek-chat';
+
+  // 获取提供商信息
+  if (apiProviders.length === 0) {
+    apiProviders = await window.electronAPI.getApiProviders();
+  }
+
+  const provider = apiProviders.find(p => p.id === apiProvider);
+  let displayText = modelName;
+
+  // 如果是预设提供商，尝试获取友好名称
+  if (provider && provider.models.length > 0) {
+    const model = provider.models.find(m => m.id === modelName);
+    if (model) {
+      displayText = model.name;
+    }
+  }
+
+  currentModelDisplay.textContent = displayText;
+  currentModelDisplay.title = `当前模型: ${modelName}\n提供商: ${provider ? provider.name : apiProvider}`;
+}
+
 // 发送消息
 async function sendMessage() {
   const message = messageInput.value.trim();
@@ -305,39 +376,80 @@ async function sendMessage() {
   uploadedImage = null;
   isProcessing = true;
   sendBtn.disabled = true;
+  sendBtn.style.display = 'none';
+  stopBtn.style.display = 'block';
+
+  // 显示连接中状态
+  showStatus('连接中...', '⏳');
+  firstChunkReceived = false;
+
+  // 添加用户消息到对话历史
+  conversationHistory.push({ role: 'user', content: fullMessage });
 
   // 创建助手消息容器
   currentAssistantContent = '';
   currentAssistantMessage = appendMessage('assistant', '', true);
 
-  // 发送到主进程（带预设 prompt）
+  // 初始连接超时检测（10秒内没收到第一个字符）
+  let initialTimeout = setTimeout(() => {
+    if (!firstChunkReceived) {
+      showStatus('连接超时，请检查网络或 API 配置', '⚠️');
+    }
+  }, 10000);
+
+  // 发送到主进程（带预设 prompt 和对话历史）
   const presetPrompt = currentPreset && currentPreset.prompt ? currentPreset.prompt : '';
-  const result = await window.electronAPI.sendMessage(fullMessage, presetPrompt);
+  const result = await window.electronAPI.sendMessage(fullMessage, presetPrompt, conversationHistory);
+
+  // 立即清除所有定时器和状态
+  clearTimeout(initialTimeout);
+  hideStatus();
 
   if (result.error) {
     currentAssistantMessage.innerHTML = `<p style="color: #ff6b6b;">❌ 错误: ${result.error}</p>`;
     if (result.error.includes('API Key')) {
       showConfigPrompt();
     }
+    // 错��时移除最后添加的用户消息
+    conversationHistory.pop();
   } else {
-    // 保存到历史记录
+    // 添加助手回复到对话历史
+    conversationHistory.push({ role: 'assistant', content: currentAssistantContent });
+
+    // 保持对话历史在合理长度（最近 10 轮对话 = 20 条消息）
+    if (conversationHistory.length > 20) {
+      conversationHistory = conversationHistory.slice(-20);
+    }
+
+    // 保存到历史记录（用于显示）
     saveHistory(message, currentAssistantContent);
   }
 
   isProcessing = false;
   sendBtn.disabled = false;
+  sendBtn.style.display = 'block';
+  stopBtn.style.display = 'none';
   messageInput.focus();
 }
 
 // 接收流式响应
+let firstChunkReceived = false;
 window.electronAPI.onMessageChunk((chunk) => {
   if (currentAssistantMessage) {
+    // 第一次收到数据时清除初始超时
+    if (!firstChunkReceived) {
+      firstChunkReceived = true;
+      // 状态由 onModelStatus 监听器处理，这里不再手动设置
+    }
+
     currentAssistantContent += chunk;
     // 渲染 Markdown
     if (typeof marked !== 'undefined') {
       const contentDiv = currentAssistantMessage.querySelector('.message-content');
       if (contentDiv) {
         contentDiv.innerHTML = marked.parse(currentAssistantContent);
+        // 为代码块添加复制按钮
+        addCopyButtonsToCodeBlocks(contentDiv);
       }
     } else {
       const contentDiv = currentAssistantMessage.querySelector('.message-content');
@@ -371,11 +483,25 @@ function appendMessage(role, content, isMarkdown) {
   messageDiv.appendChild(contentDiv);
 
   if (role === 'assistant') {
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'message-btn-group';
+
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn';
     copyBtn.textContent = '📋 复制';
     copyBtn.onclick = () => copyToClipboard(contentDiv, copyBtn);
-    messageDiv.appendChild(copyBtn);
+
+    const regenerateBtn = document.createElement('button');
+    regenerateBtn.className = 'regenerate-btn';
+    regenerateBtn.textContent = '🔄 重新生成';
+    regenerateBtn.onclick = () => regenerateResponse(messageDiv);
+
+    btnGroup.appendChild(copyBtn);
+    btnGroup.appendChild(regenerateBtn);
+    messageDiv.appendChild(btnGroup);
+
+    // 为代码块添加复制按钮
+    addCopyButtonsToCodeBlocks(contentDiv);
   }
 
   chatContainer.appendChild(messageDiv);
@@ -408,6 +534,102 @@ function copyToClipboard(contentDiv, button) {
   });
 }
 
+// 为代码块添加复制按钮
+function addCopyButtonsToCodeBlocks(container) {
+  const codeBlocks = container.querySelectorAll('pre code');
+  codeBlocks.forEach((codeBlock) => {
+    const pre = codeBlock.parentElement;
+
+    // 避免重复添加按钮
+    if (pre.querySelector('.code-copy-btn')) {
+      return;
+    }
+
+    // 创建复制按钮
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'code-copy-btn';
+    copyBtn.textContent = '📋';
+    copyBtn.title = '复制代码';
+
+    copyBtn.onclick = (e) => {
+      e.stopPropagation();
+      const code = codeBlock.textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        copyBtn.textContent = '✓';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = '📋';
+          copyBtn.classList.remove('copied');
+        }, 2000);
+      });
+    };
+
+    // 添加按钮到 pre 元素
+    pre.style.position = 'relative';
+    pre.appendChild(copyBtn);
+  });
+}
+
+// 重新生成回答
+async function regenerateResponse(assistantMessageDiv) {
+  if (isProcessing) return;
+
+  // 找到这条助手消息对应的用户消息
+  let userMessageDiv = assistantMessageDiv.previousElementSibling;
+  while (userMessageDiv && !userMessageDiv.classList.contains('user')) {
+    userMessageDiv = userMessageDiv.previousElementSibling;
+  }
+
+  if (!userMessageDiv) {
+    alert('无法找到对应的用户消息');
+    return;
+  }
+
+  const userMessage = userMessageDiv.querySelector('.message-content').textContent.trim();
+
+  // 移除当前助手消息
+  assistantMessageDiv.remove();
+
+  // 从对话历史中移除最后一条助手回复
+  if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'assistant') {
+    conversationHistory.pop();
+  }
+
+  // 重新发送请求
+  isProcessing = true;
+  sendBtn.disabled = true;
+  sendBtn.style.display = 'none';
+  stopBtn.style.display = 'block';
+
+  showStatus('重新生成中...', '🔄');
+  firstChunkReceived = false;
+
+  currentAssistantContent = '';
+  currentAssistantMessage = appendMessage('assistant', '', true);
+
+  const presetPrompt = currentPreset && currentPreset.prompt ? currentPreset.prompt : '';
+  const result = await window.electronAPI.sendMessage(userMessage, presetPrompt, conversationHistory);
+
+  clearTimeout(timeout);
+  hideStatus();
+
+  if (result.error) {
+    currentAssistantMessage.innerHTML = `<p style="color: #ff6b6b;">❌ 错误: ${result.error}</p>`;
+  } else {
+    conversationHistory.push({ role: 'assistant', content: currentAssistantContent });
+
+    if (conversationHistory.length > 20) {
+      conversationHistory = conversationHistory.slice(-20);
+    }
+  }
+
+  isProcessing = false;
+  sendBtn.disabled = false;
+  sendBtn.style.display = 'block';
+  stopBtn.style.display = 'none';
+  messageInput.focus();
+}
+
 // 清空对话
 function clearChat() {
   chatContainer.innerHTML = `
@@ -420,6 +642,14 @@ function clearChat() {
     </div>
   `;
   messageInput.focus();
+}
+
+// 清空对话上下文
+function clearConversation() {
+  if (confirm('确定要清空对话上下文吗？这将开始一个全新的对话。')) {
+    conversationHistory = [];
+    clearChat();
+  }
 }
 
 // 显示配置提示
@@ -449,12 +679,21 @@ async function saveApiKey() {
 
 // 打开设置
 async function openSettings() {
+  // 加载 API 提供商列表
+  if (apiProviders.length === 0) {
+    apiProviders = await window.electronAPI.getApiProviders();
+  }
+
   const apiKey = await window.electronAPI.getConfig('deepseekApiKey');
+  const apiProvider = await window.electronAPI.getConfig('apiProvider') || 'deepseek';
+  const modelName = await window.electronAPI.getConfig('modelName') || 'deepseek-chat';
+  const baseUrl = await window.electronAPI.getConfig('deepseekBaseUrl');
   const shortcut = await window.electronAPI.getConfig('globalShortcut');
   const hideOnBlur = await window.electronAPI.getConfig('hideOnBlur');
   const autoLaunch = await window.electronAPI.getConfig('autoLaunch');
   const opacity = await window.electronAPI.getConfig('windowOpacity') || 100;
 
+  settingsApiProvider.value = apiProvider;
   settingsApiKey.value = apiKey || '';
   settingsShortcut.value = shortcut || 'CommandOrControl+Shift+Space';
   settingsHideOnBlur.checked = hideOnBlur || false;
@@ -462,9 +701,66 @@ async function openSettings() {
   settingsOpacity.value = opacity;
   opacityValue.textContent = opacity;
 
+  // 更新模型列表
+  updateModelList(apiProvider, modelName);
+
+  // 如果是自定义，显示自定义字段
+  if (apiProvider === 'custom') {
+    customBaseUrlGroup.style.display = 'block';
+    customModelGroup.style.display = 'block';
+    settingsBaseUrl.value = baseUrl || '';
+    settingsCustomModel.value = modelName || '';
+  } else {
+    customBaseUrlGroup.style.display = 'none';
+    customModelGroup.style.display = 'none';
+  }
+
   settingsModal.style.display = 'flex';
   settingsApiKey.focus();
 }
+
+// 更新模型列表
+function updateModelList(providerId, selectedModel) {
+  const provider = apiProviders.find(p => p.id === providerId);
+  if (!provider) return;
+
+  settingsModel.innerHTML = '';
+
+  if (provider.models.length > 0) {
+    provider.models.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.textContent = model.name;
+      if (model.id === selectedModel) {
+        option.selected = true;
+      }
+      settingsModel.appendChild(option);
+    });
+    settingsModel.style.display = 'block';
+    settingsModel.parentElement.style.display = 'block';
+  } else {
+    settingsModel.style.display = 'none';
+    settingsModel.parentElement.style.display = 'none';
+  }
+}
+
+// API 提供商切换事件
+settingsApiProvider.addEventListener('change', (e) => {
+  const providerId = e.target.value;
+  const provider = apiProviders.find(p => p.id === providerId);
+
+  if (providerId === 'custom') {
+    customBaseUrlGroup.style.display = 'block';
+    customModelGroup.style.display = 'block';
+    customModelInputGroup.style.display = 'none';
+    settingsModel.parentElement.style.display = 'none';
+  } else {
+    customBaseUrlGroup.style.display = 'none';
+    customModelGroup.style.display = 'none';
+    customModelInputGroup.style.display = 'block';
+    updateModelList(providerId, provider.models[0]?.id);
+  }
+});
 
 // 透明度滑块实时更新
 settingsOpacity.addEventListener('input', (e) => {
@@ -475,12 +771,41 @@ settingsOpacity.addEventListener('input', (e) => {
 // 保存设置
 async function saveSettings() {
   const apiKey = settingsApiKey.value.trim();
+  const apiProvider = settingsApiProvider.value;
   const shortcut = settingsShortcut.value.trim();
   const hideOnBlur = settingsHideOnBlur.checked;
   const autoLaunch = settingsAutoLaunch.checked;
 
   if (apiKey) {
     await window.electronAPI.setConfig('deepseekApiKey', apiKey);
+  }
+
+  // 保存 API 提供商
+  await window.electronAPI.setConfig('apiProvider', apiProvider);
+
+  // 保存模型和 base URL
+  if (apiProvider === 'custom') {
+    const customBaseUrl = settingsBaseUrl.value.trim();
+    const customModel = settingsCustomModel.value.trim();
+    if (customBaseUrl) {
+      await window.electronAPI.setConfig('deepseekBaseUrl', customBaseUrl);
+    }
+    if (customModel) {
+      await window.electronAPI.setConfig('modelName', customModel);
+    }
+  } else {
+    const provider = apiProviders.find(p => p.id === apiProvider);
+    if (provider) {
+      await window.electronAPI.setConfig('deepseekBaseUrl', provider.baseUrl);
+
+      // 优先使用手动输入的模型名
+      const manualModel = settingsManualModel.value.trim();
+      const selectedModel = manualModel || settingsModel.value;
+
+      if (selectedModel) {
+        await window.electronAPI.setConfig('modelName', selectedModel);
+      }
+    }
   }
 
   if (shortcut) {
@@ -497,6 +822,15 @@ async function saveSettings() {
   // 保存透明度
   const opacity = parseInt(settingsOpacity.value);
   await window.electronAPI.setConfig('windowOpacity', opacity);
+
+  // 更新当前模型显示
+  await updateCurrentModelDisplay();
+
+  // 显示保存成功提示
+  showStatus('设置已保存 ✓', '✅');
+  setTimeout(() => {
+    hideStatus();
+  }, 2000);
 
   settingsModal.style.display = 'none';
   messageInput.focus();
@@ -584,7 +918,25 @@ pasteBtn.addEventListener('click', async () => {
 });
 
 sendBtn.addEventListener('click', sendMessage);
+stopBtn.addEventListener('click', async () => {
+  await window.electronAPI.stopGeneration();
+  hideStatus();
+
+  isProcessing = false;
+  sendBtn.disabled = false;
+  sendBtn.style.display = 'block';
+  stopBtn.style.display = 'none';
+
+  // 在当前消息后添加"已停止"提示
+  if (currentAssistantMessage) {
+    const contentDiv = currentAssistantMessage.querySelector('.message-content');
+    if (contentDiv) {
+      contentDiv.innerHTML += '\n\n<p style="color: #fca5a5; font-style: italic;">⏹ 生成已停止</p>';
+    }
+  }
+});
 clearBtn.addEventListener('click', clearChat);
+clearChatBtn.addEventListener('click', clearConversation);
 closeBtn.addEventListener('click', () => window.electronAPI.hideWindow());
 historyBtn.addEventListener('click', showHistory);
 settingsBtn.addEventListener('click', openSettings);

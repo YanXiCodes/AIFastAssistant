@@ -9,6 +9,14 @@ const schema = {
     type: 'string',
     default: 'https://api.deepseek.com'
   },
+  modelName: {
+    type: 'string',
+    default: 'deepseek-chat'
+  },
+  apiProvider: {
+    type: 'string',
+    default: 'deepseek'
+  },
   globalShortcut: {
     type: 'string',
     default: 'CommandOrControl+Shift+Space'
@@ -99,6 +107,38 @@ const presets = [
   }
 ];
 
+// API 提供商配置
+const apiProviders = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek 官方',
+    baseUrl: 'https://api.deepseek.com',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      { id: 'deepseek-coder', name: 'DeepSeek Coder' }
+    ]
+  },
+  {
+    id: 'siliconflow',
+    name: '硅基流动',
+    baseUrl: 'https://api.siliconflow.cn',
+    models: [
+      { id: 'deepseek-ai/DeepSeek-V3', name: 'DeepSeek V3' },
+      { id: 'Qwen/Qwen2.5-7B-Instruct', name: 'Qwen 2.5 7B' },
+      { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B' },
+      { id: 'THUDM/glm-4-9b-chat', name: 'GLM-4 9B' },
+      { id: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B' },
+      { id: 'internlm/internlm2_5-7b-chat', name: 'InternLM 2.5 7B' }
+    ]
+  },
+  {
+    id: 'custom',
+    name: '自定义',
+    baseUrl: '',
+    models: []
+  }
+];
+
 const config = new Store({ schema });
 
-module.exports = { config, presets };
+module.exports = { config, presets, apiProviders };

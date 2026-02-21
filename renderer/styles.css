@@ -37,6 +37,16 @@ body {
   letter-spacing: 0.5px;
 }
 
+.current-model {
+  font-size: 11px;
+  color: #71717a;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .controls {
   display: flex;
   gap: 6px;
@@ -100,12 +110,14 @@ body {
 .chat-container {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto; /* 改为 auto，避免平滑滚动导致的抖动 */
   background: rgba(22, 33, 62, 0.3);
   will-change: scroll-position;
   transform: translateZ(0);
   -webkit-overflow-scrolling: touch;
+  contain: layout style paint; /* 优化渲染性能 */
 }
 
 .chat-container::-webkit-scrollbar {
@@ -123,6 +135,39 @@ body {
 
 .chat-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* 状态指示器 */
+.status-indicator {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #a5b4fc;
+  z-index: 10;
+  backdrop-filter: blur(10px);
+}
+
+.status-icon {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  flex: 1;
 }
 
 .welcome-message {
@@ -184,6 +229,7 @@ body {
   flex-direction: column;
   max-width: 90%;
   position: relative;
+  min-height: 40px; /* 防止高度突变 */
 }
 
 .message.assistant .message-content {
@@ -197,6 +243,8 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   font-size: 14px;
   color: #e4e4e7;
+  min-height: 20px; /* 确保最小高度 */
+  transition: none; /* 移除过渡动画，防止抖动 */
 }
 
 .message-content {
@@ -316,11 +364,56 @@ body {
   color: #e4e4e7;
 }
 
-/* 复制按钮 */
-.copy-btn {
+/* 代码块复制按钮 */
+.code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(102, 126, 234, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  color: #e4e4e7;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+pre:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background: rgba(102, 126, 234, 0.3);
+  transform: scale(1.05);
+}
+
+.code-copy-btn.copied {
+  background: rgba(34, 197, 94, 0.3);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+
+/* 消息按钮组 */
+.message-btn-group {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message.assistant:hover .message-btn-group {
+  opacity: 1;
+}
+
+/* 复制按钮 */
+.copy-btn, .regenerate-btn {
   background: rgba(102, 126, 234, 0.2);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(102, 126, 234, 0.3);
@@ -329,16 +422,11 @@ body {
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
-  opacity: 0;
   transition: all 0.2s ease;
   font-weight: 500;
 }
 
-.message.assistant:hover .copy-btn {
-  opacity: 1;
-}
-
-.copy-btn:hover {
+.copy-btn:hover, .regenerate-btn:hover {
   background: rgba(102, 126, 234, 0.3);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
@@ -514,6 +602,19 @@ button:active {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
+.stop-btn {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  flex: 1;
+}
+
+.stop-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.4);
+  transform: translateY(-1px);
+}
+
 /* 模态框 */
 .modal {
   position: absolute;
@@ -563,7 +664,8 @@ button:active {
   font-weight: 500;
 }
 
-.setting-group input[type="text"] {
+.setting-group input[type="text"],
+.setting-group select {
   width: 100%;
   background: rgba(39, 39, 42, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -574,10 +676,25 @@ button:active {
   transition: all 0.2s;
 }
 
-.setting-group input[type="text"]:focus {
+.setting-group input[type="text"]:focus,
+.setting-group select:focus {
   outline: none;
   border-color: rgba(102, 126, 234, 0.5);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.setting-group select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23e4e4e7' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.setting-group select option {
+  background: #27272a;
+  color: #e4e4e7;
 }
 
 .setting-group input[type="checkbox"] {
